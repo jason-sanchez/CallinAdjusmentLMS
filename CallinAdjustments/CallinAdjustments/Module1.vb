@@ -83,11 +83,17 @@ Module Module1
             message.To.Add(New MailAddress(Recipient))
         Next
 
+        Try
+            SMTP.Send(message)
+            logEvent("Success!", "Email Sent Complete!")
+        Catch ex As Exception
+            logEvent("Error", ex.ToString())
+        End Try
+
     End Sub
 
     Private Sub logEvent(ByVal type As String, ByVal mess As String)
         If type = "Error" Then
-
             Dim errorfilename As String = String.Format("BillingAdjustmentError{0:yyyyMMdd_HH-mm-ss}.txt", Date.Now)
             Dim errorfile = New StreamWriter(errorfilePath & errorfilename, True)
             errorfile.Write(mess)

@@ -2,12 +2,17 @@
 Imports System.Data.SqlClient
 Imports System.IO
 Imports System.Net.Mail
+Imports System.Globalization
 
 Module Module1
 
     Dim DBconnectionString As String = System.Configuration.ConfigurationManager.ConnectionStrings("DefaultConnection").ToString()
     Dim errorfilePath As String = System.Configuration.ConfigurationManager.AppSettings("errorLog").ToString()
     Dim completefilePath As String = System.Configuration.ConfigurationManager.AppSettings("completionLog").ToString()
+
+    'Dim DBconnectionString As String = "server=192.168.20.4;database=LMS.Net;uid=sysmax;pwd=sysmax"
+    'Dim errorfilePath As String = "C:\LMSCallinAdjustments\ErrorLog\"
+    'Dim completefilePath As String = "C:\LMSCallinAdjustments\completionLog\"
 
     Sub Main()
         Try
@@ -21,6 +26,7 @@ Module Module1
                     .Connection.Open()
                     .CommandType = CommandType.StoredProcedure
                     .CommandText = "billing_CallinOrders"
+                    '.CommandText = "billing_CallinOrdersTest"
 
                     Adapter.SelectCommand = objDBCommand
                     Adapter.Fill(dt)
@@ -34,15 +40,24 @@ Module Module1
                     .Connection = insertconnect
                     .Connection.Open()
 
+                    Dim sql As String = ""
+                    Dim sql2 As String = ""
                     For Each dr As DataRow In dt.Rows
 
-                        Dim locationId As String = dr("LocationID")
-                        Dim itemid As Integer = CInt(dr("ItemID"))
-                        Dim quantity As Integer = CInt(dr("Quantity"))
-                        Dim userid As String = dr("UserID")
+                        'Dim locationId As String = dr("LocationID")
+                        'Dim itemid As Integer = CInt(dr("ItemID"))
+                        'Dim quantity As Integer = CInt(dr("Quantity"))
+                        'Dim userid As String = dr("UserID")
+                        'Dim orderID As Integer = CInt(dr("OrderID"))
+                        'Dim lastModified As String = CDate(dr("LastModified")).ToString("yyyy-MM-dd HH:mm:ss.fff")
+                        'Dim approved As Boolean = CBool(dr("Approved"))
+
+                        'Insert Billing Adjustment
+                        Dim billingID As Integer
 
                         .CommandType = CommandType.StoredProcedure
                         .CommandText = "billing_InsertBillingAdjustment"
+                        '.CommandText = "billing_InsertBillingAdjustment"
                         .Parameters.Clear()
                         .Parameters.AddWithValue("@LocationID", dr("LocationID"))
                         .Parameters.AddWithValue("@ItemID", dr("ItemID"))
@@ -51,13 +66,42 @@ Module Module1
                             .Parameters.AddWithValue("@creditQuantity", 0)
                         Else
                             .Parameters.AddWithValue("@ReplacementQuantity", 0)
-                            .Parameters.AddWithValue("@creditQuantity", CInt(dr("Quantity")))
+                            'change negative values to positive
+                            .Parameters.AddWithValue("@creditQuantity", Math.Abs(CInt(dr("Quantity"))))
                         End If
                         .Parameters.AddWithValue("@UserID", dr("UserID"))
-                        .Parameters.AddWithValue("@Approved", 1)
+                        .Parameters.AddWithValue("@Approved", dr("Approved"))
                         .ExecuteNonQuery()
 
+                        'Get Billing AdjustmentID
+                        sql = " SELECT TOP 1 ID "
+                        sql = sql & " FROM [BillingAdjustments] "
+                        'sql = sql & " FROM [BillingAdjustmentsTest] "
+                        sql = sql & " WHERE LocationID = '" & dr("LocationID") & "' "
+                        sql = sql & " AND itemID = '" & CInt(dr("ItemID")) & "' "
+                        If CInt(dr("Quantity")) >= 0 Then
+                            sql = sql & " AND ReplacementQuantity = '" & CInt(dr("Quantity")) & "' "
+                        Else
+                            sql = sql & " AND CreditQuantity = '" & Math.Abs(CInt(dr("Quantity"))) & "' "
+                        End If
+                        sql = sql & " AND userID = '" & dr("UserID") & "' "
+                        sql = sql & " Order By ID desc "
+                        .CommandType = CommandType.Text
+                        .CommandText = sql
+                        billingID = .ExecuteScalar()
 
+                        'update [DeliveryOrderItems].[BillingAdjustmentID] with Billing AdjustmentID
+                        sql2 = " UPDATE [dbo].[DeliveryOrderItems] "
+                        'sql2 = " UPDATE [dbo].[DeliveryOrderItemsTest] "
+                        sql2 = sql2 & " SET [BillingAdjustmentID] = '" & billingID & "' "
+                        sql2 = sql2 & " WHERE OrderID = '" & CInt(dr("OrderID")) & "' "
+                        sql2 = sql2 & " AND ItemID = '" & CInt(dr("ItemID")) & "' "
+                        sql2 = sql2 & " AND OriginalQuantity = '" & CInt(dr("Quantity")) & "' "
+                        sql2 = sql2 & " AND LastModified = '" & CDate(dr("LastModified")).ToString("yyyy-MM-dd HH:mm:ss.fff") & "' "
+
+                        .CommandType = CommandType.Text
+                        .CommandText = sql2
+                        .ExecuteNonQuery()
                     Next
                 End With
             End Using
